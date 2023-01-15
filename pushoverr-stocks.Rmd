@@ -1,0 +1,299 @@
+---
+title: "Pushoverr Stocks"
+author: "Christian Kruse"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message = FALSE,warning = FALSE)
+options(scipen=999)
+```
+
+# Pushoverr Stocks
+
+```{r}
+
+if (!require(pacman)) { install.packages("pacman") }
+pacman::p_load(pushoverr,
+               TTR,
+               dplyr,
+               tidyr,
+               lubridate,
+               scales,
+               httr,
+               ggplot2,
+               quantmod,
+               fredr,
+               glue,
+               data.table)
+
+```
+
+
+```{r warning=FALSE,message=FALSE,include=FALSE}
+readRenviron(path = "Renviron.site")
+fredr::fredr_set_key(key = Sys.getenv("FREDAPIKEY"))
+pushoverr::set_pushover_app(token = Sys.getenv("PUSHOVER_APPKEY"))
+pushoverr::set_pushover_user(user = Sys.getenv("PUSHOVER_USERKEY"))
+
+```
+
+
+```{r}
+
+query_yahoo = function(ticker) {
+  getSymbols(ticker, env = NULL) %>% 
+  as.data.frame(.) %>% 
+  dplyr::mutate(Date=row.names(.)) %>% 
+  dplyr::mutate(Date=gsub("X","",Date)) %>% 
+  dplyr::mutate(Date=ymd(Date)) %>% 
+  dplyr::select(c(7,1,4,3,2)) %>% 
+  setNames(.,c("Date","Value","Open","Low","High")) %>% 
+  na.omit() %>% 
+  mutate(greenRed=ifelse(Open-Value>0,
+                         "Red",
+                         "Green")) %>% 
+  dplyr::mutate(ticker=ticker) %>% 
+  relocate(ticker) #%>% 
+  # dplyr::mutate(SMA_180=TTR::SMA(x = Value,n = 365.25*0.5)) %>% 
+  # dplyr::mutate(SMA_365=TTR::SMA(x = Value,n = 365.25*1)) %>% 
+  # dplyr::mutate(SMA_730=TTR::SMA(x = Value,n = 365.25*2))
+}
+```
+
+```{r }
+
+add_fomc_meeting_dates = function() {
+  geom_vline(xintercept = c(ymd("2022-06-15"),
+                            ymd("2022-07-27"),
+                            ymd("2022-09-21"),
+                            ymd("2022-11-02"),
+                            ymd("2022-12-14"),
+                            ymd("2023-02-01"),
+                            ymd("2023-03-15"),
+                            ymd("2023-05-03"),
+                            ymd("2023-06-14"),
+                            ymd("2023-07-26"),
+                            ymd("2023-09-20"),
+                            ymd("2023-11-01"),
+                            ymd("2023-12-13")),linetype=2,color="#eb493a")
+}
+```
+
+```{r}
+
+sector_industry_file = file.info(list.files(pattern = "nasdaq_screener",full.names = T)) %>% 
+  arrange(desc(mtime)) %>% 
+  slice(1) %>% 
+  row.names(.) %>% 
+  read.csv(file = .) %>% 
+  dplyr::select(Symbol,Sector,Industry,Market.Cap,Volume)
+
+
+# Get all symbols
+df_stocks = stockSymbols() %>% 
+  dplyr::select(Symbol,Name,Exchange,ETF) %>% 
+  filter(Exchange %in% c("NASDAQ","NYSE"),
+         ETF==FALSE) %>% 
+  group_by(Symbol) %>% 
+  filter(n()==1) %>% 
+  ungroup() %>% 
+  filter(!grepl("File Creation",Symbol)) %>% 
+  filter(!grepl("AXAC-R",Symbol))%>% 
+  filter(!grepl("ZCZZT",Symbol)) %>% 
+  inner_join(sector_industry_file)
+
+df_top = df_stocks %>% 
+  dplyr::mutate(Market.Cap=Market.Cap/1000000000) %>% 
+  arrange(desc(Market.Cap)) %>% 
+  top_n(n = 150,wt = Market.Cap)
+
+top_symbols = df_top %>% pull(Symbol)
+
+```
+
+```{r}
+
+list_stock_data = lapply(top_symbols,function(symbol) {
+  query_yahoo(ticker = symbol)
+})
+
+df_stock_data = do.call("rbind",list_stock_data)
+
+
+```
+
+```{r}
+calculate_all = function(data) {
+  current_date = data %>% tail(1) 
+  current_price = current_date %>% pull(Value)
+  smas_ = unlist(lapply(seq(50,1500),function(sma_) { TTR::SMA(x = data$Value,n = sma_) %>% tail(1) }))
+  current_sma = 50+which( abs(smas_ - current_price) == min(abs(smas_ - current_price) ) )
+  current_rsi = TTR::RSI(price = data$Value) %>% tail(1)
+  current_macd_macd = TTR::MACD(x = data$Value) %>% tail(1) %>% as.data.frame() %>% pull(macd)
+  current_macd_signal = TTR::MACD(x = data$Value) %>% tail(1) %>% as.data.frame() %>% pull(signal)
+  current_macd_diff = current_macd_signal - current_macd_macd
+    current_days_since_this_value = data %>% filter(Value<=current_price | Date==max(Date)) %>% tail(2) %>% pull(Date)
+  current_days_since_this_value = as.numeric(current_days_since_this_value[2]-current_days_since_this_value[1])
+  
+  percentile_last_1_year = data %>% 
+    filter(Date>=Sys.Date()-years(1)) %>% 
+    dplyr::mutate(Value=scale(Value)) %>% 
+    tail(1) %>% 
+    pull(Value)  %>% 
+    as.numeric() %>% 
+    pnorm(., mean = 0, sd = 1, lower.tail = TRUE)
+  percentile_last_5_year = data %>% 
+    filter(Date>=Sys.Date()-years(5)) %>% 
+    dplyr::mutate(Value=scale(Value)) %>% 
+    tail(1) %>% 
+    pull(Value)  %>% 
+    as.numeric() %>% 
+    pnorm(., mean = 0, sd = 1, lower.tail = TRUE)
+  percentile_last_30_days = data %>% 
+    filter(Date>=Sys.Date()-days(30)) %>% 
+    dplyr::mutate(Value=scale(Value)) %>% 
+    tail(1) %>% 
+    pull(Value)  %>% 
+    as.numeric() %>% 
+    pnorm(., mean = 0, sd = 1, lower.tail = TRUE)
+  
+  lm_1_year = data %>% 
+    filter(Date>=Sys.Date()-years(1)) %>% 
+    lm(Value~Date,data=.)
+  current_lm_1yr_rsq = summary(lm_1_year)$r.squared
+  current_lm_1yr_expected = predict(lm_1_year,data.frame(Date=Sys.Date()+years(1)))/current_price-1
+
+  lm_exp_14days = data %>% 
+    filter(Date>=Sys.Date()-years(1)) %>% 
+    lm(log(Value)~Date,data=.)
+  current_exp_14days_rsq = summary(lm_exp_14days)$r.squared
+  current_exp_14days_expected = exp(predict(lm_exp_14days,data.frame(Date=Sys.Date()+days(14))))/current_price-1
+  
+  current_rsi_strongbuy = unlist(lapply(seq(0,1,by=0.01),function(decr) { 
+  temp_df = data
+  temp_df$Value[nrow(temp_df)] = temp_df$Value[nrow(temp_df)]*(1-decr)
+  TTR::RSI(price = temp_df$Value) %>% tail(1)
+      }))
+  current_rsi_strongbuy = as.numeric((1-seq(0,1,by=0.01)[which(current_rsi_strongbuy<=10)][1])*current_price)
+  
+  current_percentile5yr_strongbuy = unlist(lapply(seq(0,1,by=0.01),function(decr) { 
+          temp_df = data %>% filter(Date>=Sys.Date()-years(5))
+          temp_df$Value[nrow(temp_df)] = temp_df$Value[nrow(temp_df)]*(1-decr)
+          temp_df %>% 
+            dplyr::mutate(Value=scale(Value)) %>% 
+            tail(1) %>% 
+            pull(Value)  %>% 
+            as.numeric() %>% 
+            pnorm(., mean = 0, sd = 1, lower.tail = TRUE)
+      }))
+  current_percentile5yr_strongbuy = as.numeric((1-seq(0,1,by=0.01)[which(current_percentile5yr_strongbuy<=0.025)][1])*current_price)
+  
+return(current_date %>% 
+           dplyr::mutate(current_sma=current_sma,
+                         current_rsi=current_rsi,
+                         current_macd_diff=current_macd_diff,
+                         current_days_since_this_value=current_days_since_this_value,
+                         percentile_last_30_days=percentile_last_30_days,
+                         percentile_last_1_year=percentile_last_1_year,
+                         percentile_last_5_year=percentile_last_5_year,
+                         current_exp_14days_rsq=current_exp_14days_rsq,
+                         current_exp_14days_expected=current_exp_14days_expected,
+                         current_lm_1yr_rsq=current_lm_1yr_rsq,
+                         current_lm_1yr_expected=current_lm_1yr_expected,
+                         current_rsi_strongbuy=current_rsi_strongbuy,
+                         current_percentile5yr_strongbuy=current_percentile5yr_strongbuy))
+  
+}
+
+df_stock_data_analysed = df_stock_data %>% 
+  group_by(ticker) %>% 
+  arrange(ticker,Date) %>% 
+  do(calculate_all(.)) %>% 
+  ungroup()
+
+df_stock_data_analysed
+```
+
+```{r}
+worst_sma = df_stock_data_analysed %>% 
+  arrange(desc(current_sma)) %>% 
+  slice(1)
+msg_worst_sma = glue("SMA: {worst_sma$ticker} ({worst_sma$current_sma})")
+```
+
+
+```{r}
+worst_rsi = df_stock_data_analysed %>% 
+  arrange((current_rsi)) %>% 
+  slice(1)
+msg_worst_rsi = glue("RSI: {worst_rsi$ticker} ({scales::number(worst_rsi$current_rsi,accuracy=1)})")
+```
+
+```{r}
+worst_macd = df_stock_data_analysed %>% 
+  arrange(desc(current_macd_diff)) %>% 
+  slice(1)
+msg_worst_macd = glue("MACD: {worst_macd$ticker} ({scales::number(-1*worst_macd$current_macd_diff,accuracy=0.01)})")
+```
+
+```{r}
+worst_days_since_this_value = df_stock_data_analysed %>% 
+  arrange(desc(current_days_since_this_value)) %>% 
+  slice(1)
+msg_worst_days_since_this_value = glue("Days Since: {worst_days_since_this_value$ticker} ({worst_days_since_this_value$current_days_since_this_value})")
+```
+
+```{r}
+best_exp = df_stock_data_analysed %>% 
+  filter(current_exp_14days_expected>0) %>% 
+  arrange(desc(current_exp_14days_rsq)) %>% 
+  slice(1)
+msg_best_exp = glue("Exp 14 Days: {best_exp$ticker}, {scales::percent(best_exp$current_exp_14days_expected,accuracy=0.1)} ({scales::percent(best_exp$current_exp_14days_rsq,accuracy=1)})")
+```
+
+```{r}
+best_lm  = df_stock_data_analysed %>% 
+  filter(current_lm_1yr_expected>0) %>% 
+  arrange(desc(current_lm_1yr_rsq)) %>% 
+  slice(1)
+msg_best_lm = glue("LM 1 year: {best_lm$ticker}, {scales::percent(best_lm$current_lm_1yr_expected,accuracy=0.1)} ({scales::percent(best_lm$current_lm_1yr_rsq,accuracy=1)})")
+```
+
+
+# Push over
+
+```{r}
+
+df_buying_levels = df_stock_data_analysed %>% 
+  dplyr::select(ticker,Value,current_rsi_strongbuy,current_percentile5yr_strongbuy) %>% 
+  dplyr::mutate(pct_rsi = (current_rsi_strongbuy/Value)-1) %>% 
+  dplyr::mutate(pct_pct = (current_percentile5yr_strongbuy/Value)-1)
+
+bestbuy_rsi = df_buying_levels %>% 
+    arrange(desc(pct_rsi)) %>% 
+    top_n(10,wt = pct_rsi) %>% 
+    dplyr::mutate(label_rsi=paste0(ticker,": ",scales::number(current_rsi_strongbuy,accuracy = 0.01)," ( ",scales::percent(pct_rsi,accuracy = 1)," )")) %>% 
+    pull(label_rsi) %>% 
+    paste(.,collapse="\n")
+bestbuy_rsi = paste0("\nRSI:\n",bestbuy_rsi)
+
+bestbuy_pci = df_buying_levels %>% 
+    arrange(desc(pct_pct)) %>% 
+    top_n(10,wt = pct_pct) %>% 
+    dplyr::mutate(label_pct=paste0(ticker,": ",scales::number(current_rsi_strongbuy,accuracy = 0.01)," ( ",scales::percent(pct_pct,accuracy = 1)," )")) %>% 
+    pull(label_pct) %>% 
+    paste(.,collapse="\n")
+bestbuy_pci = paste0("\nPCT:\n",bestbuy_pci)
+
+```
+
+```{r}
+
+pushover_daily = paste(list(msg_worst_sma,msg_worst_rsi,msg_worst_macd,msg_worst_days_since_this_value,msg_best_exp,msg_best_lm,bestbuy_rsi,bestbuy_pci),collapse="\n")
+pushoverr::pushover(pushover_daily)
+```
+
+
+
