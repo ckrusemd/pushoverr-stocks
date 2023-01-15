@@ -1,5 +1,5 @@
 --- 
-title: "Pushoverr Weather Forecast"
+title: "Pushoverr Stocks"
 author: "Christian Kruse"
 date: "`r Sys.Date()`"
 site: bookdown::bookdown_site
@@ -11,7 +11,7 @@ link-citations: yes
 description: "Pushoverr"
 ---
 
-# Pushoverr Weather Forecast
+# Pushoverr Stocks
 
 
 

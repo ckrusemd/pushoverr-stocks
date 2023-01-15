@@ -5,7 +5,7 @@ on:
   schedule:
     - cron:  '1 0 * * *'
 
-name: pushoverr-weather-example
+name: pushoverr-stocks
 
 jobs:
   bookdown:
@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: r-lib/actions/setup-r@v2
       - name: Renviron
-        run: echo $'PUSHOVER_APPKEY=${{ secrets.PUSHOVER_APPKEY }}\nPUSHOVER_USERKEY=${{ secrets.PUSHOVER_USERKEY }}\nOPENWEATHERMAP_APIKEY=${{ secrets.OPENWEATHERMAP_APIKEY }}' >> Renviron.site
+        run: echo $'FREDAPIKEY=${{ secrets.FREDAPIKEY }}\PUSHOVER_APPKEY=${{ secrets.PUSHOVER_APPKEY }}\PUSHOVER_USERKEY=${{ secrets.PUSHOVER_USERKEY }}' >> Renviron.site
       - name: Render Book from Action
         uses: ckrusemd/rmarkdown-action@v0.18
         with:
