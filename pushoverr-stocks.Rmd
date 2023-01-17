@@ -15,6 +15,7 @@ options(scipen=999)
 ```{r}
 
 if (!require(pacman)) { install.packages("pacman") }
+install.packages('quantmod')
 pacman::p_load(pushoverr,
                TTR,
                dplyr,
@@ -23,7 +24,6 @@ pacman::p_load(pushoverr,
                scales,
                httr,
                ggplot2,
-               quantmod,
                fredr,
                glue,
                data.table)
@@ -109,8 +109,17 @@ df_top = df_stocks %>%
   arrange(desc(Market.Cap)) %>% 
   top_n(n = 150,wt = Market.Cap)
 
-top_symbols = df_top %>% pull(Symbol)
+# Bitcoin
+symbols_coins = c("BTC-USD","DOGE-USD","ETH-USD")
 
+# Metals
+symbols_metals = c("GC-F","SI-F")
+
+# Currency
+symbols_currency = c("DKK-X","EUR-X","JPYDKK=X","SEKDKK=X","NOKDKK=X","AEDDKK=X","CADDKK=X","AUDDKK=X")
+
+top_symbols = df_top %>% pull(Symbol)
+# top_symbols = c(top_symbols,symbols_coins,symbols_metals,symbols_currency)
 ```
 
 ```{r}
