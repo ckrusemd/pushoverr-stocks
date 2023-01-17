@@ -136,9 +136,10 @@ df_stock_data = do.call("rbind",list_stock_data)
 
 ```{r}
 calculate_all = function(data) {
+  # logger::log_info(unique(data$ticker))
   current_date = data %>% tail(1) 
   current_price = current_date %>% pull(Value)
-  smas_ = unlist(lapply(seq(50,1500),function(sma_) { TTR::SMA(x = data$Value,n = sma_) %>% tail(1) }))
+  smas_ = unlist(lapply(seq(50,100*floor(nrow(data)/100)),function(sma_) { TTR::SMA(x = data$Value,n = sma_) %>% tail(1) }))
   current_sma = 50+which( abs(smas_ - current_price) == min(abs(smas_ - current_price) ) )
   current_rsi = TTR::RSI(price = data$Value) %>% tail(1)
   current_macd_macd = TTR::MACD(x = data$Value) %>% tail(1) %>% as.data.frame() %>% pull(macd)
