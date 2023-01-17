@@ -16,6 +16,7 @@ options(scipen=999)
 
 if (!require(pacman)) { install.packages("pacman") }
 install.packages('quantmod')
+library(quantmod)
 pacman::p_load(pushoverr,
                TTR,
                dplyr,
