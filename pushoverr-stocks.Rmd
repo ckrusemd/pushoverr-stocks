@@ -40,6 +40,10 @@ pushoverr::set_pushover_user(user = Sys.getenv("PUSHOVER_USERKEY"))
 
 ```
 
+```{r}
+num_stocks = 200
+```
+
 
 ```{r}
 
@@ -108,7 +112,7 @@ df_stocks = stockSymbols() %>%
 df_top = df_stocks %>% 
   dplyr::mutate(Market.Cap=Market.Cap/1000000000) %>% 
   arrange(desc(Market.Cap)) %>% 
-  top_n(n = 150,wt = Market.Cap)
+  top_n(n = num_stocks,wt = Market.Cap)
 
 # Bitcoin
 symbols_coins = c("BTC-USD","DOGE-USD","ETH-USD")
