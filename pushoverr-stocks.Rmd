@@ -140,17 +140,35 @@ df_stock_data = do.call("rbind",list_stock_data)
 ```
 
 ```{r}
+df_stock_data %>% 
+  group_by(ticker) %>% 
+  dplyr::mutate(RSI_=TTR::RSI(Value,n = 90)) %>% 
+  dplyr::mutate(RSI_scaled=scale(RSI_)) %>% 
+  filter(RSI_scaled<=qnorm(0.03)) %>% 
+  dplyr::mutate(Date=floor_date(Date,unit = "month")) %>% 
+  group_by(Date) %>% 
+  dplyr::summarize(count=n_distinct(ticker)) %>% 
+  ggplot(.,aes(x=Date,y=count)) +
+  geom_col()
+  # geom_histogram(binwidth = 0.1)
+```
+
+
+```{r}
 calculate_all = function(data) {
   # logger::log_info(unique(data$ticker))
   current_date = data %>% tail(1) 
   current_price = current_date %>% pull(Value)
   smas_ = unlist(lapply(seq(50,100*floor(nrow(data)/100)),function(sma_) { TTR::SMA(x = data$Value,n = sma_) %>% tail(1) }))
   current_sma = 50+which( abs(smas_ - current_price) == min(abs(smas_ - current_price) ) )
-  current_rsi = TTR::RSI(price = data$Value) %>% tail(1)
-  current_macd_macd = TTR::MACD(x = data$Value) %>% tail(1) %>% as.data.frame() %>% pull(macd)
-  current_macd_signal = TTR::MACD(x = data$Value) %>% tail(1) %>% as.data.frame() %>% pull(signal)
-  current_macd_diff = current_macd_signal - current_macd_macd
-    current_days_since_this_value = data %>% filter(Value<=current_price | Date==max(Date)) %>% tail(2) %>% pull(Date)
+  current_rsi = TTR::RSI(price = data$Value) %>% scale(.) %>% tail(1) %>% pnorm()
+  
+  current_macd = data.frame( TTR::MACD(x = data$Value) )
+  current_macd$diff = current_macd$macd - current_macd$signal
+  current_macd_macd = scale(current_macd$macd) %>% tail(1) %>% pnorm()
+  current_macd_signal = scale(current_macd$signal) %>% tail(1) %>% pnorm()
+  current_macd_diff = scale(current_macd$signal - current_macd$macd) %>% tail(1) %>% pnorm()
+  current_days_since_this_value = data %>% filter(Value<=current_price | Date==max(Date)) %>% tail(2) %>% pull(Date)
   current_days_since_this_value = as.numeric(current_days_since_this_value[2]-current_days_since_this_value[1])
   
   percentile_last_1_year = data %>% 
@@ -190,9 +208,9 @@ calculate_all = function(data) {
   current_rsi_strongbuy = unlist(lapply(seq(0,1,by=0.01),function(decr) { 
   temp_df = data
   temp_df$Value[nrow(temp_df)] = temp_df$Value[nrow(temp_df)]*(1-decr)
-  TTR::RSI(price = temp_df$Value) %>% tail(1)
+  TTR::RSI(price = temp_df$Value,n = 90) %>% scale() %>% tail(1) %>% pnorm()
       }))
-  current_rsi_strongbuy = as.numeric((1-seq(0,1,by=0.01)[which(current_rsi_strongbuy<=10)][1])*current_price)
+  current_rsi_strongbuy = as.numeric((1-seq(0,1,by=0.01)[which(current_rsi_strongbuy<=0.02)][1])*current_price)
   
   current_percentile5yr_strongbuy = unlist(lapply(seq(0,1,by=0.01),function(decr) { 
           temp_df = data %>% filter(Date>=Sys.Date()-years(5))
@@ -204,7 +222,7 @@ calculate_all = function(data) {
             as.numeric() %>% 
             pnorm(., mean = 0, sd = 1, lower.tail = TRUE)
       }))
-  current_percentile5yr_strongbuy = as.numeric((1-seq(0,1,by=0.01)[which(current_percentile5yr_strongbuy<=0.025)][1])*current_price)
+  current_percentile5yr_strongbuy = as.numeric((1-seq(0,1,by=0.01)[which(current_percentile5yr_strongbuy<=0.02)][1])*current_price)
   
   # Rebound
   current_rebound = data %>% 
@@ -251,14 +269,14 @@ msg_worst_sma = glue("SMA: {worst_sma$ticker} ({worst_sma$current_sma})")
 worst_rsi = df_stock_data_analysed %>% 
   arrange((current_rsi)) %>% 
   slice(1)
-msg_worst_rsi = glue("RSI: {worst_rsi$ticker} ({scales::number(worst_rsi$current_rsi,accuracy=1)})")
+msg_worst_rsi = glue("RSI: {worst_rsi$ticker} ({scales::percent(worst_rsi$current_rsi,accuracy=0.01)})")
 ```
 
 ```{r}
 worst_macd = df_stock_data_analysed %>% 
   arrange(desc(current_macd_diff)) %>% 
   slice(1)
-msg_worst_macd = glue("MACD: {worst_macd$ticker} ({scales::number(-1*worst_macd$current_macd_diff,accuracy=0.01)})")
+msg_worst_macd = glue("MACD: {worst_macd$ticker} ({scales::percent(worst_macd$current_macd_diff,accuracy=0.01)})")
 ```
 
 ```{r}
