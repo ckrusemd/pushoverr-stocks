@@ -42,7 +42,7 @@ pushoverr::set_pushover_user(user = Sys.getenv("PUSHOVER_USERKEY"))
 ```
 
 ```{r}
-num_stocks = 250
+num_stocks = 350
 ```
 
 
@@ -287,19 +287,24 @@ msg_worst_days_since_this_value = glue("Days Since: {worst_days_since_this_value
 ```
 
 ```{r}
-best_exp = df_stock_data_analysed %>% 
-  filter(current_exp_14days_expected>0) %>% 
-  arrange(desc(current_exp_14days_rsq)) %>% 
-  slice(1)
-msg_best_exp = glue("Exp 14 Days: {best_exp$ticker}, {scales::percent(best_exp$current_exp_14days_expected,accuracy=0.1)} ({scales::percent(best_exp$current_exp_14days_rsq,accuracy=1)})")
+
+p = high(current_exp_14days_expected) * high(current_exp_14days_rsq)
+msg_best_exp = psel(df_stock_data_analysed %>% filter(current_exp_14days_expected>=0), p, top = nrow(df_stock_data_analysed %>% filter(current_exp_14days_expected>=0))) %>% 
+    filter(.level %in% c(1,2)) %>% 
+    dplyr::mutate(label_=glue("{ticker}: {scales::percent(current_exp_14days_expected,accuracy=1)} (R2: {scales::percent(current_exp_14days_rsq,accuracy=1)})")) %>% 
+    pull(label_) %>% 
+    paste(collapse="\n")
+
 ```
 
 ```{r}
-best_lm  = df_stock_data_analysed %>% 
-  filter(current_lm_1yr_expected>0) %>% 
-  arrange(desc(current_lm_1yr_rsq)) %>% 
-  slice(1)
-msg_best_lm = glue("LM 1 year: {best_lm$ticker}, {scales::percent(best_lm$current_lm_1yr_expected,accuracy=0.1)} ({scales::percent(best_lm$current_lm_1yr_rsq,accuracy=1)})")
+
+p = high(current_lm_1yr_expected) * high(current_lm_1yr_rsq)
+msg_best_lm = psel(df_stock_data_analysed %>% filter(current_lm_1yr_expected>=0), p, top = nrow(df_stock_data_analysed %>% filter(current_lm_1yr_expected>=0))) %>% 
+    filter(.level %in% c(1,2)) %>% 
+    dplyr::mutate(label_=glue("{ticker}: {scales::percent(current_lm_1yr_expected,accuracy=1)} (R2: {scales::percent(current_lm_1yr_rsq,accuracy=1)})")) %>% 
+    pull(label_) %>% 
+    paste(collapse="\n")
 ```
 
 ```{r}
@@ -339,7 +344,7 @@ bestbuy_pci = paste0("\nPCT:\n",bestbuy_pci)
 
 ```{r}
 
-pushover_daily = paste(list(msg_worst_sma,msg_worst_rsi,msg_worst_macd,msg_worst_days_since_this_value,msg_best_exp,msg_best_lm,best_turnaround,bestbuy_rsi,bestbuy_pci),collapse="\n")
+pushover_daily = paste(list(msg_worst_sma,msg_worst_rsi,msg_worst_macd,msg_worst_days_since_this_value,"\nEXP:",msg_best_exp,"\nLM:",msg_best_lm,best_turnaround,bestbuy_rsi,bestbuy_pci),collapse="\n")
 pushoverr::pushover(pushover_daily)
 ```
 
